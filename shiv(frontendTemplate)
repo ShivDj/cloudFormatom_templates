@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  FrontendELBSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Frontend Instance Security Group
+      VpcId: vpc-042fddad3450e4504
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+  InternalLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        - subnet-0d7553adb90bbfd58
+        - subnet-02bf18114119f743e
+      SecurityGroups:
+        - !Ref FrontendELBSG
+      Tags:
+        - Key: Name
+          Value: InternalLoadBalancer
+  InternalTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: vpc-042fddad3450e4504
+  Listener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref InternalTargetGroup
+      LoadBalancerArn: !Ref InternalLoadBalancer
+      Port: '80'
+      Protocol: HTTP
+  frontendLaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: ami-0e0cc6d5243c54191
+      SecurityGroups:
+        - !Ref frontendSecurityGroup
+      InstanceType: t2.micro
+      KeyName: public_instance_key
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+      UserData: !Base64 >
+        #!/bin/bash
+
+        cd /
+
+
+        sudo ln -s /etc/nginx/sites-available/chatapp
+        /etc/nginx/sites-enabled/chatapp
+
+        cd /etc/nginx/sites-available/
+
+        sudo sed -i
+        's+shivsingh+http://internal-Backe-Inter-HHYSC77MRGNK-1044045702.ap-south-1.elb.amazonaws.com+g'
+        chatapp
+
+        sudo systemctl restart nginx    
+  frontendendASG:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      AvailabilityZones:
+        - ap-south-1a
+      MinSize: '1'
+      MaxSize: '4'
+      DesiredCapacity: '1'
+      TargetGroupARNs:
+        - !Ref InternalTargetGroup
+      LaunchConfigurationName: !Ref frontendLaunchConfig
+      VPCZoneIdentifier:
+        - subnet-0d7553adb90bbfd58
+  frontendCPUPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AutoScalingGroupName: !Ref frontendendASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 60
+  frontendSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Backend Instance Security Group
+      VpcId: vpc-042fddad3450e4504
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
